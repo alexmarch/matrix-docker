@@ -1,0 +1,11 @@
+{$MATRIX_SERVER_NAME} {
+	reverse_proxy synapse:8008
+}
+
+{$ELEMENT_DOMAIN} {
+	reverse_proxy element:80
+}
+
+{$ADMIN_DOMAIN} {
+	reverse_proxy synapse-admin:80
+}

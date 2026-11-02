@@ -1,0 +1,118 @@
+services:
+  postgres:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: synapse
+      POSTGRES_USER: synapse
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?Set POSTGRES_PASSWORD in .env}
+      POSTGRES_INITDB_ARGS: --encoding=UTF8 --locale=C
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U synapse -d synapse"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks:
+      - matrix
+
+  synapse-generate:
+    image: matrixdotorg/synapse:latest
+    profiles: ["init"]
+    environment:
+      SYNAPSE_SERVER_NAME: ${MATRIX_SERVER_NAME:?Set MATRIX_SERVER_NAME in .env}
+      SYNAPSE_REPORT_STATS: "no"
+    volumes:
+      - synapse_data:/data
+    command: ["generate"]
+
+  config-render:
+    image: matrixdotorg/synapse:latest
+    profiles: ["init"]
+    user: "0:0"
+    entrypoint: ["python"]
+    command: ["/scripts/render-config.py"]
+    env_file:
+      - .env
+    volumes:
+      - synapse_data:/data
+      - ./templates:/templates:ro
+      - ./scripts/render-config.py:/scripts/render-config.py:ro
+      - ./generated:/generated
+
+  synapse:
+    image: matrixdotorg/synapse:latest
+    restart: unless-stopped
+    depends_on:
+      postgres:
+        condition: service_healthy
+    volumes:
+      - synapse_data:/data
+    networks:
+      - matrix
+
+  element:
+    image: vectorim/element-web:latest
+    restart: unless-stopped
+    volumes:
+      - ./generated/element-config.json:/app/config.json:ro
+    networks:
+      - matrix
+
+  synapse-admin:
+    image: awesometechnologies/synapse-admin:latest
+    restart: unless-stopped
+    environment:
+      REACT_APP_SERVER: https://${MATRIX_SERVER_NAME:?Set MATRIX_SERVER_NAME in .env}
+    networks:
+      - matrix
+
+  caddy:
+    image: caddy:2-alpine
+    restart: unless-stopped
+    depends_on:
+      - synapse
+      - element
+      - synapse-admin
+    environment:
+      MATRIX_SERVER_NAME: ${MATRIX_SERVER_NAME:?Set MATRIX_SERVER_NAME in .env}
+      ELEMENT_DOMAIN: ${ELEMENT_DOMAIN:?Set ELEMENT_DOMAIN in .env}
+      ADMIN_DOMAIN: ${ADMIN_DOMAIN:?Set ADMIN_DOMAIN in .env}
+    ports:
+      - "80:80"
+      - "443:443"
+      - "443:443/udp"
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy_data:/data
+      - caddy_config:/config
+    networks:
+      - matrix
+
+  coturn:
+    image: coturn/coturn:latest
+    restart: unless-stopped
+    command: ["-c", "/etc/coturn/turnserver.conf"]
+    ports:
+      - "3478:3478/udp"
+      - "3478:3478/tcp"
+      - "49160-49200:49160-49200/udp"
+      - "49160-49200:49160-49200/tcp"
+    volumes:
+      - ./generated/turnserver.conf:/etc/coturn/turnserver.conf:ro
+    networks:
+      matrix:
+        ipv4_address: 172.29.0.10
+
+volumes:
+  postgres_data:
+  synapse_data:
+  caddy_data:
+  caddy_config:
+
+networks:
+  matrix:
+    ipam:
+      config:
+        - subnet: 172.29.0.0/16

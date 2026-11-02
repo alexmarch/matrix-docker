@@ -1,0 +1,36 @@
+public_baseurl: @MATRIX_BASE_URL@
+
+database:
+  name: psycopg2
+  args:
+    user: synapse
+    password: @POSTGRES_PASSWORD@
+    database: synapse
+    host: postgres
+    port: 5432
+    cp_min: 5
+    cp_max: 10
+
+listeners:
+  - port: 8008
+    type: http
+    tls: false
+    bind_addresses: ["0.0.0.0"]
+    x_forwarded: true
+    resources:
+      - names: [client, federation]
+        compress: false
+
+enable_registration: false
+registration_shared_secret: @REGISTRATION_SHARED_SECRET@
+
+cors_allowed_origins:
+  - @ELEMENT_ORIGIN@
+  - @ADMIN_ORIGIN@
+
+turn_uris:
+  - @TURN_URI_UDP@
+  - @TURN_URI_TCP@
+turn_shared_secret: @TURN_SHARED_SECRET@
+turn_user_lifetime: 1h
+turn_allow_guests: true
